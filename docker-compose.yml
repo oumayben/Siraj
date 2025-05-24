@@ -1,0 +1,134 @@
+services:
+  mysql:
+    image: mysql:5.7
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: socialmediadb
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql:/docker-entrypoint-initdb.d
+    networks:
+      - hadoop-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 20s
+      retries: 5
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    ports:
+      - "8082:80"
+    environment:
+      PMA_HOST: mysql
+      MYSQL_ROOT_PASSWORD: root
+    networks:
+      - hadoop-net
+    depends_on:
+      - mysql
+
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    environment:
+      - CLUSTER_NAME=Mycluster
+    ports:
+      - "9870:9870"
+      - "8020:8020"
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    networks:
+      - hadoop-net
+
+  datanode1:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode1
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+      - HDFS_CONF_dfs_replication=2
+    volumes:
+      - hadoop_datanode1:/hadoop/dfs/data
+    depends_on:
+      - namenode
+    networks:
+      - hadoop-net
+
+  datanode2:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode2
+    environment:
+    - CLUSTER_NAME=Mycluster
+    - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+    - HDFS_CONF_dfs_replication=2
+    volumes:
+      - hadoop_datanode2:/hadoop/dfs/data
+    depends_on:
+      - namenode
+    networks:
+      - hadoop-net
+
+
+  datanode3:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode3
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+      - HDFS_CONF_dfs_replication=2
+    volumes:
+      - hadoop_datanode3:/hadoop/dfs/data
+    depends_on:
+      - namenode
+    networks:
+      - hadoop-net
+
+  sqoop:
+    image: dvoros/sqoop:latest
+    container_name: sqoop
+    stdin_open: true
+    tty: true
+    depends_on:
+      - mysql
+      - namenode
+    volumes:
+    - ./sqoop:/scripts
+    - ./Drivers/mysql-connector-java-5.1.15-bin.jar:/usr/local/sqoop/lib/mysql-connector-java-5.1.15-bin.jar
+    - ./hadoop-config/core-site.xml:/usr/local/hadoop-3.1.0/etc/hadoop/core-site.xml
+    networks:
+      - hadoop-net
+    environment:
+      MYSQL_HOST: mysql
+    entrypoint: ["sh", "-c", "chmod +x /scripts/import_sql_to_hdfs.sh && /scripts/import_sql_to_hdfs.sh && tail -f /dev/null"]
+
+  springapp:
+    build:
+      context: social-media/
+    container_name: spring-app
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mysql
+    volumes:
+      - ./social-media/uploads:/uploads
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/socialmediadb?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+      SERVER_PORT: 8081
+    networks:
+      - hadoop-net
+    command: ["/wait-for-it.sh", "mysql:3306", "--", "java", "-jar", "/app.jar"]
+
+
+volumes:
+  mysql_data:
+  hadoop_namenode:
+  hadoop_datanode1:
+  hadoop_datanode2:
+  hadoop_datanode3:
+networks:
+  hadoop-net:
+    driver: bridge
+
